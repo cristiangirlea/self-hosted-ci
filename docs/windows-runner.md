@@ -53,6 +53,15 @@ Two traps on the way, both of which `icacls` reports as success:
 `icacls /C` keeps going past files it cannot change and can still exit 0, so the script reads its
 summary line ("Failed processing 0 files") instead of trusting the exit code.
 
+## 5. Windows shortens long service names
+
+`config.cmd --runasservice` names the service `actions.runner.<owner>-<repo>.<runner name>`, and
+when that exceeds 80 characters on Windows it shortens the owner-and-repo part and the runner part
+and appends a random number: `lab-windows-shci-smoke-windows-<host>` became
+`lab-windows-shci-smoke-win-2747`. It records the name it chose, as plain text, in the runner
+folder's `.service` file (`WindowsServiceControlManager` in the runner's source); look the service up
+by that, never by rebuilding the name. A short name hides this: the first longer one fails.
+
 ## What the script does
 
 1. Refuses unless GitHub reports the repository as private.

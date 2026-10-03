@@ -107,8 +107,14 @@ if (Test-Path (Join-Path $dir '.runner')) {
         '--name', $name, '--labels', $Label, '--work', '_work', '--runasservice', '--replace')
 }
 
-$service = Get-Service | Where-Object { $_.Name -like "actions.runner.*.$name" }
-if (-not $service) { throw "no service named actions.runner.*.$name was installed" }
+# The service's name comes from the .service file config.cmd writes. Windows limits service names,
+# so config.cmd shortens a long runner name (lab-windows-<long repo>-<host> becomes, for example,
+# lab-windows-<repo>-win-2747); rebuilding the name here would miss it.
+$serviceFile = Join-Path $dir '.service'
+if (-not (Test-Path $serviceFile)) { throw "$serviceFile is missing: config.cmd did not install a service" }
+$serviceName = (Get-Content -Path $serviceFile -Raw).Trim()
+$service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+if (-not $service) { throw "no service named $serviceName (from $serviceFile) is installed" }
 # Stopped while its files' permissions change, so no job is half-way through _work meanwhile.
 Stop-Service -InputObject $service
 
