@@ -76,6 +76,44 @@ make runners-status
 and set each repository's `CI_RUNNER` variable to its scale set's name (`lab-<repo>`), by hand or
 with `tofu/` (`ci_runner_repos`, then `GITHUB_TOKEN=$(gh auth token) tofu apply`).
 
+### With Flux
+
+If Flux manages your cluster, let it install the controller and the scale sets instead of `make arc`
+and `make runners`. Point a Flux Kustomization at [`flux/`](flux): it creates `arc-controller-values`
+and `runner-scale-set-values` in `flux-system`, the same files `make` reads. Then one HelmRelease for
+the controller and one per repository:
+
+```yaml
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata: {name: arc, namespace: flux-system}
+spec: {type: oci, interval: 1h, url: oci://ghcr.io/actions/actions-runner-controller-charts}
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata: {name: runners-my-repo, namespace: flux-system}
+spec:
+  interval: 10m
+  releaseName: runners-my-repo        # the name `make runners` used, so Flux takes the release over
+  targetNamespace: arc-runners
+  storageNamespace: arc-runners
+  chart:
+    spec:
+      chart: gha-runner-scale-set
+      version: 0.14.2
+      sourceRef: {kind: HelmRepository, name: arc}
+  valuesFrom:
+    - {kind: ConfigMap, name: runner-scale-set-values, valuesKey: values.yaml}
+  values:
+    githubConfigUrl: https://github.com/<owner>/my-repo
+    runnerScaleSetName: lab-my-repo
+```
+
+The controller's HelmRelease is the same with `releaseName: arc`, `targetNamespace: arc-systems`, the
+chart `gha-runner-scale-set-controller` and `arc-controller-values`. `make runner-node`,
+`make runner-image` and `make fork-approval` stay make targets: they act on a node, the registry
+and GitHub, not on Kubernetes objects Flux could own.
+
 ## Security model
 
 Runners execute whatever a workflow says, so who can reach them matters more than anything else.

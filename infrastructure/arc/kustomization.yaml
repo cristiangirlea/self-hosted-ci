@@ -1,0 +1,11 @@
+# The controller's values as a ConfigMap, for a Flux HelmRelease (`valuesFrom`); `make arc` reads the
+# same file. Built through ../../flux, which puts it in flux-system with a fixed name.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# A fixed name, so a HelmRelease can name it (the option only applies where the generator is).
+generatorOptions:
+  disableNameSuffixHash: true
+configMapGenerator:
+  - name: arc-controller-values
+    files:
+      - values.yaml=controller-values.yaml
