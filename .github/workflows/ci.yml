@@ -46,3 +46,5 @@ jobs:
         run: |
           kubectl kustomize apps/hello/local > /dev/null
           kubectl kustomize infrastructure/traefik > /dev/null
+          # Both ConfigMaps under their fixed names: a HelmRelease's valuesFrom names them.
+          test "$(kubectl kustomize flux | grep -cE '^  name: (arc-controller-values|runner-scale-set-values)$')" -eq 2

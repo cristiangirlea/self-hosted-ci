@@ -1,0 +1,14 @@
+# The scale sets' shared values as a ConfigMap, for Flux HelmReleases (`valuesFrom`); `make runners`
+# reads the same file. Built through ../flux, which puts it in flux-system with a fixed name.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# A fixed name, so a HelmRelease can name it (the option only applies where the generator is).
+generatorOptions:
+  disableNameSuffixHash: true
+  # helm-controller watches labelled ConfigMaps and upgrades at once when a value changes.
+  labels:
+    reconcile.fluxcd.io/watch: Enabled
+configMapGenerator:
+  - name: runner-scale-set-values
+    files:
+      - values.yaml
