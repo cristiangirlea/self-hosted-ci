@@ -50,6 +50,10 @@ RUNNER_NS      := arc-runners
 # resources after the scale set, so two sets with one name in one namespace collide.
 RUNNER_PREFIX  := lab
 HELM           := helm --kube-context k3d-$(CLUSTER)
+# Releases a Flux HelmRelease owns (by spec.releaseName, any namespace): `make arc` and `make runners`
+# leave them alone, so the Helm CLI and helm-controller never take turns upgrading one release.
+# Empty when Flux is not installed. Recursively expanded, so the cluster is asked only when used.
+FLUX_RELEASES   = $(shell $(KUBECTL) get helmreleases.helm.toolkit.fluxcd.io -A -o jsonpath='{range .items[*]}{.spec.releaseName} {end}' 2>/dev/null)
 
 ## tools: install the pinned tool versions (winget, plus k3d and sops from GitHub releases).
 tools:
@@ -111,6 +115,7 @@ verify: lint
 
 ## arc: install or upgrade the Actions Runner Controller (the operator; it needs no credentials).
 arc:
+	@if echo " $(FLUX_RELEASES) " | grep -q " arc "; then echo "== arc: owned by a Flux HelmRelease, skipped (change it in git)"; exit 0; fi; \
 	$(HELM) upgrade --install arc $(ARC_CHART)/gha-runner-scale-set-controller --version $(ARC_VERSION) \
 	  --namespace arc-systems --create-namespace -f infrastructure/arc/controller-values.yaml --wait --timeout 5m
 
@@ -135,6 +140,7 @@ runners: config-check runners-lint runner-node fork-approval
 	@$(KUBECTL) -n arc-systems get deploy -l app.kubernetes.io/part-of=gha-rs-controller -o name 2>/dev/null | grep -q . || { echo "the runner controller is not installed: run make arc first"; exit 1; }
 	@$(KUBECTL) -n $(RUNNER_NS) get secret github-app >/dev/null 2>&1 || { echo "secret $(RUNNER_NS)/github-app is missing: create it as README.md, CI runners, describes"; exit 1; }
 	@for r in $(REPOS); do \
+	  case " $(FLUX_RELEASES) " in *" runners-$$r "*) echo "== $$r: owned by a Flux HelmRelease, skipped (change it in git)"; continue;; esac; \
 	  echo "== $$r"; \
 	  $(HELM) upgrade --install runners-$$r $(ARC_CHART)/gha-runner-scale-set --version $(ARC_VERSION) \
 	    --namespace $(RUNNER_NS) -f runners/values.yaml --set githubConfigUrl=https://github.com/$(GITHUB_OWNER)/$$r \

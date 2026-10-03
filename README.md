@@ -129,6 +129,9 @@ spec:
     runnerScaleSetName: lab-my-repo
 ```
 
+Once a HelmRelease owns a release, `make arc` and `make runners` skip it (matched by
+`spec.releaseName`), so the Helm CLI and helm-controller never take turns upgrading it.
+
 The ConfigMaps carry `reconcile.fluxcd.io/watch: Enabled`, so helm-controller (Flux 2.5 or later)
 upgrades a release as soon as a value changes, not at its next interval. `make runner-node`,
 `make runner-image` and `make fork-approval` stay make targets: they act on a node, the registry
