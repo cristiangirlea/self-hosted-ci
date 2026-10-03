@@ -1,0 +1,48 @@
+name: ci
+
+# This public repository's own checks run on GitHub's hosted runners, never on self-hosted ones:
+# a pull request here can come from anyone.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.12.6
+      - name: tofu fmt and validate
+        working-directory: tofu
+        run: |
+          tofu fmt -recursive -check
+          tofu init -backend=false -input=false
+          tofu validate
+      - name: PowerShell scripts parse
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($f in Get-ChildItem -Recurse -Filter *.ps1) {
+            $errs = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errs)
+            foreach ($e in $errs) { Write-Host "$($f.Name):$($e.Extent.StartLineNumber): $($e.Message)"; $failed = $true }
+          }
+          if ($failed) { exit 1 }
+      - name: shell scripts parse
+        run: bash -n scripts/scrub-check.sh
+      - name: make lint and config checks
+        run: |
+          make lint runners-lint
+          ! make -s config-check 2>/dev/null
+          printf 'GITHUB_OWNER := example\nREPOS := a\n' > /tmp/config.mk
+          make -s config-check CONFIG=/tmp/config.mk
+      - name: manifests render
+        run: |
+          kubectl kustomize apps/hello/local > /dev/null
+          kubectl kustomize infrastructure/traefik > /dev/null

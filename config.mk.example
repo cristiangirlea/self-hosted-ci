@@ -1,0 +1,16 @@
+# Copy to config.mk (git-ignored) and fill in.
+
+# The GitHub user or organization that owns the repositories.
+GITHUB_OWNER := your-github-user
+
+# Repositories whose Linux CI jobs run on the cluster's runners. The GitHub App the runners
+# authenticate as (README, "CI runners") must be installed on each of them.
+REPOS := my-private-repo
+
+# The public ones among REPOS. `make fork-approval` (run by `make runners`) makes every workflow run
+# from a fork's pull request wait for your approval in these. Leave it empty if all are private.
+PUBLIC_REPOS :=
+
+# A wildcard name for the lab that resolves to 127.0.0.1, for example lab.example.com
+# (tofu/ can create the record in Cloudflare). The default resolves nowhere; `make verify` still works.
+# DOMAIN := lab.example.com

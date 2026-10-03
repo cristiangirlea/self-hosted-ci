@@ -1,0 +1,12 @@
+# Actions Runner Controller: the operator that turns a runner scale set into runner pods on
+# demand. Installed by `make arc` with the chart version pinned in the Makefile.
+replicaCount: 1
+# The controller watches every namespace for scale sets; runners live in arc-runners.
+flags:
+  logLevel: info
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

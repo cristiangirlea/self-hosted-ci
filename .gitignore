@@ -1,0 +1,15 @@
+# Runtime state that never belongs in git.
+# Your owner, repositories and domain (copy config.mk.example).
+config.mk
+.data/
+.env
+*.pem
+*-key.pem
+
+# OpenTofu: providers, state and the real variable values. The lock file IS committed: it pins
+# the provider versions and checksums that were validated.
+tofu/.terraform/
+tofu/*.tfstate
+tofu/*.tfstate.*
+tofu/terraform.tfvars
+tofu/*.auto.tfvars

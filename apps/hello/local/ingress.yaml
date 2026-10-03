@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hello
+spec:
+  ingressClassName: traefik
+  tls:
+    # No secretName: Traefik serves the cluster's default certificate (infrastructure/traefik).
+    # The host is a placeholder: `make hello` replaces it with hello.<DOMAIN>.
+    - hosts: [hello.lab.example.test]
+  rules:
+    - host: hello.lab.example.test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hello
+                port:
+                  number: 80

@@ -1,0 +1,49 @@
+# The whole cluster, declared. `make up` creates it from this file; `make down` deletes it.
+# k3s is pinned one minor above the installed kubectl (1.34), the newest the client supports.
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: lab
+servers: 1
+agents: 2
+image: rancher/k3s:v1.35.8-k3s1
+
+# The Kubernetes API is published on loopback only, on a fixed port so the kubeconfig stays
+# stable across recreates.
+kubeAPI:
+  hostIP: "127.0.0.1"
+  hostPort: "6443"
+
+ports:
+  # Traefik, which ships with k3s, answers on the host's 80 and 443 through the k3d load
+  # balancer. Bound to loopback: nothing on the LAN reaches the cluster's ingress.
+  - port: 127.0.0.1:80:80
+    nodeFilters: [loadbalancer]
+  - port: 127.0.0.1:443:443
+    nodeFilters: [loadbalancer]
+
+registries:
+  # The cluster's own image registry, unauthenticated, so it listens on loopback only. The host
+  # pushes to localhost:5000; pods pull the same image as registry.localhost:5000/<name> (the
+  # container is named exactly as below, no k3d- prefix). Blobs live in a named volume.
+  create:
+    name: registry.localhost
+    host: "127.0.0.1"
+    hostPort: "5000"
+    volumes:
+      - k3d-lab-registry:/var/lib/registry
+
+volumes:
+  # Persistent volumes (local-path provisioner) live in a named Docker volume: fast, and it
+  # survives `k3d cluster delete`. The backups folder on the Windows side is mounted by
+  # `make up` (--volume), since its path depends on where this repository is checked out.
+  - volume: k3d-lab-storage:/var/lib/rancher/k3s/storage
+    nodeFilters: [all]
+
+options:
+  k3d:
+    wait: true
+    timeout: 180s
+  kubeconfig:
+    updateDefaultKubeconfig: true
+    switchCurrentContext: true

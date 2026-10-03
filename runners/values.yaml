@@ -1,0 +1,112 @@
+# One runner scale set per repository, all from this file; `make runners` installs one
+# Helm release per repo in REPOS and passes the repo's URL and its name, lab-<repo>. tofu writes
+# that name to the repo's CI_RUNNER variable, so every workflow still uses the same line:
+#   runs-on: ${{ vars.CI_RUNNER || 'ubuntu-latest' }}
+# The names differ because the chart names each set, its ServiceAccount and its Role after the
+# set's name, so a second set called "lab" in this namespace collided with the first.
+
+# The GitHub App credentials, created once by hand in arc-runners (see README, "CI runners").
+githubConfigSecret: github-app
+
+# Scale to zero: a runner pod exists only while a job runs, and is thrown away after it.
+# One per repo: a repo's jobs run one after another, and repos can overlap.
+#
+# The queue across repos is the runner node's memory. Each pod reserves what it may use, 4.5 GiB
+# (requests equal to limits below: 1.5 GiB for the Docker daemon, 3 GiB for the runner), and the
+# node allocates about 23.5 GiB inside the WSL VM's 24 GB, so at most five pods run at once,
+# however many repos there are. A sixth stays Pending until one finishes, and its job waits on
+# GitHub as "Waiting for a runner", which costs nothing: only GitHub-hosted runners bill minutes.
+# GitHub lets a personal account register runners per repository only, so this, not GitHub, is
+# what holds the line.
+minRunners: 0
+maxRunners: 1
+
+# The pod is spelled out instead of `containerMode: dind`, which renders the same spec but gives
+# no way to pin the Docker daemon's image or cap its memory. It is the chart 0.14.2 dind spec plus
+# those two changes, a node of its own, and the runner image from runners/image.
+#
+# dind means a privileged container per runner pod. That is acceptable only on the node `make
+# runner-node` taints for them, so a job that escapes to its node finds nothing else there: no
+# controller, no listener holding the GitHub App key, no application; and only for code we wrote,
+# so a public repository gets a scale set only behind `make fork-approval` (README, "CI runners").
+template:
+  spec:
+    nodeSelector:
+      ci: runners
+    tolerations:
+      - key: ci
+        operator: Equal
+        value: runners
+        effect: NoExecute
+    initContainers:
+      - name: init-dind-externals
+        image: registry.localhost:5000/ci-runner:2.337.0-2
+        command: ["cp"]
+        args: ["-r", "/home/runner/externals/.", "/home/runner/tmpDir/"]
+        volumeMounts:
+          - name: dind-externals
+            mountPath: /home/runner/tmpDir
+      - name: dind
+        image: registry.localhost:5000/dind:29.2.1
+        # The pod network is flannel VXLAN, MTU 1450. Docker's bridges default to 1500, so a
+        # container behind them (a `docker build` RUN step, a job's service) sent packets the pod
+        # network dropped: TLS handshakes stalled while the daemon's own image pulls worked.
+        args:
+          - dockerd
+          - --host=unix:///var/run/docker.sock
+          - --group=$(DOCKER_GROUP_GID)
+          - --mtu=1450
+          - --default-network-opt=bridge=com.docker.network.driver.mtu=1450
+        env:
+          - name: DOCKER_GROUP_GID
+            value: "123"
+        securityContext:
+          privileged: true
+        restartPolicy: Always
+        startupProbe:
+          exec:
+            command: ["docker", "info"]
+          initialDelaySeconds: 0
+          failureThreshold: 24
+          periodSeconds: 5
+        resources:
+          # Reserved in full: see "The queue across repos" above.
+          requests:
+            cpu: 100m
+            memory: 1536Mi
+          limits:
+            memory: 1536Mi
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+          - name: dind-sock
+            mountPath: /var/run
+          - name: dind-externals
+            mountPath: /home/runner/externals
+    containers:
+      - name: runner
+        image: registry.localhost:5000/ci-runner:2.337.0-2
+        command: ["/home/runner/run.sh"]
+        env:
+          - name: DOCKER_HOST
+            value: unix:///var/run/docker.sock
+          - name: RUNNER_WAIT_FOR_DOCKER_IN_SECONDS
+            value: "120"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 3Gi
+          limits:
+            memory: 3Gi
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+          - name: dind-sock
+            mountPath: /var/run
+    volumes:
+      - name: dind-sock
+        emptyDir: {}
+      - name: dind-externals
+        emptyDir: {}
+      - name: work
+        emptyDir: {}

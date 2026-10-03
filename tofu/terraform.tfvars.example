@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars (git-ignored) and fill in. Credentials come from the environment:
+#   GITHUB_TOKEN=$(gh auth token) tofu apply
+#   CLOUDFLARE_API_TOKEN=...      only with manage_dns = true
+github_owner = "your-github-user"
+# domain     = "lab.example.com"
+# manage_dns = true
+ci_runner_repos = ["my-private-repo"]
+# ci_runner_windows_repos = ["my-private-repo"]   # after runners/windows/install-runner.ps1

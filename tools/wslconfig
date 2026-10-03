@@ -1,0 +1,11 @@
+# Copied to C:\Users\crist\.wslconfig by `make wsl-cap`. Takes effect after `wsl --shutdown`.
+#
+# These are ceilings, not allocations: the WSL virtual machine (which Docker Desktop and the
+# cluster run in) takes memory as it is needed and, with autoMemoryReclaim, gives idle memory
+# back to Windows. Per-application sizing happens inside Kubernetes (requests, limits, quotas),
+# not here. Raise the ceiling only if the cluster shows pressure (`kubectl top nodes`).
+[wsl2]
+memory=24GB
+processors=16
+autoMemoryReclaim=gradual
+sparseVhd=true
