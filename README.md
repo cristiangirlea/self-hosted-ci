@@ -78,10 +78,11 @@ with `tofu/` (`ci_runner_repos`, then `GITHUB_TOKEN=$(gh auth token) tofu apply`
 
 ### With Flux
 
-If Flux manages your cluster, let it install the controller and the scale sets instead of `make arc`
-and `make runners`. Point a Flux Kustomization at [`flux/`](flux): it creates `arc-controller-values`
-and `runner-scale-set-values` in `flux-system`, the same files `make` reads. Then one HelmRelease for
-the controller and one per repository:
+If Flux manages your cluster, it can install the controller and the scale sets instead of `make arc`
+and `make runners`, on a fresh cluster or by taking over releases `make` installed (same release
+name and storage namespace). Point a Flux Kustomization at [`flux/`](flux): it creates
+`arc-controller-values` and `runner-scale-set-values` in `flux-system`, from the same files `make`
+reads. Then one HelmRelease for the controller and one per repository:
 
 ```yaml
 apiVersion: source.toolkit.fluxcd.io/v1
@@ -91,12 +92,31 @@ spec: {type: oci, interval: 1h, url: oci://ghcr.io/actions/actions-runner-contro
 ---
 apiVersion: helm.toolkit.fluxcd.io/v2
 kind: HelmRelease
+metadata: {name: arc, namespace: flux-system}
+spec:
+  interval: 10m
+  releaseName: arc                    # the names `make arc` used, so an existing release is taken over
+  targetNamespace: arc-systems
+  storageNamespace: arc-systems       # where Helm keeps the release; must match, or Flux installs a second one
+  install: {createNamespace: true}
+  chart:
+    spec:
+      chart: gha-runner-scale-set-controller
+      version: 0.14.2
+      sourceRef: {kind: HelmRepository, name: arc}
+  valuesFrom:
+    - {kind: ConfigMap, name: arc-controller-values, valuesKey: values.yaml}
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
 metadata: {name: runners-my-repo, namespace: flux-system}
 spec:
   interval: 10m
-  releaseName: runners-my-repo        # the name `make runners` used, so Flux takes the release over
+  dependsOn: [{name: arc}]            # the scale-set chart needs the controller and its CRDs
+  releaseName: runners-my-repo
   targetNamespace: arc-runners
   storageNamespace: arc-runners
+  install: {createNamespace: true}
   chart:
     spec:
       chart: gha-runner-scale-set
@@ -109,10 +129,11 @@ spec:
     runnerScaleSetName: lab-my-repo
 ```
 
-The controller's HelmRelease is the same with `releaseName: arc`, `targetNamespace: arc-systems`, the
-chart `gha-runner-scale-set-controller` and `arc-controller-values`. `make runner-node`,
+The ConfigMaps carry `reconcile.fluxcd.io/watch: Enabled`, so helm-controller (Flux 2.5 or later)
+upgrades a release as soon as a value changes, not at its next interval. `make runner-node`,
 `make runner-image` and `make fork-approval` stay make targets: they act on a node, the registry
-and GitHub, not on Kubernetes objects Flux could own.
+and GitHub, not on Kubernetes objects Flux could own; on a fresh cluster run `make runner-node`
+before the scale sets, or their pods have nowhere to go.
 
 ## Security model
 

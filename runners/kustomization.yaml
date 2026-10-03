@@ -5,6 +5,9 @@ kind: Kustomization
 # A fixed name, so a HelmRelease can name it (the option only applies where the generator is).
 generatorOptions:
   disableNameSuffixHash: true
+  # helm-controller watches labelled ConfigMaps and upgrades at once when a value changes.
+  labels:
+    reconcile.fluxcd.io/watch: Enabled
 configMapGenerator:
   - name: runner-scale-set-values
     files:

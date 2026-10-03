@@ -1,7 +1,7 @@
 # The runners' values for Flux: point a Flux Kustomization at this folder and HelmReleases in
-# flux-system can name these ConfigMaps in valuesFrom (README, "With Flux"). The names carry no
-# hash suffix (set in each folder), so the HelmReleases do not change when a value does; helm-controller notices the
-# changed ConfigMap on its next reconcile.
+# flux-system can name these ConfigMaps in valuesFrom (README, "With Flux"). Each folder fixes
+# its ConfigMap's name (no hash suffix) and labels it reconcile.fluxcd.io/watch: Enabled, so
+# helm-controller upgrades a release as soon as a value changes instead of at its next interval.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: flux-system
