@@ -123,6 +123,19 @@ places drifts within weeks. `make scrub WORDS=<private word list>` fails if any 
 commit message here contains a word from your list, for example the names of your private
 repositories, before you push a change made from the private side.
 
+## How releases are checked
+
+Every tag is checked before it is used: a fresh clone of the tag, given only the three settings of
+`config.mk`, brings up a runner set for the public
+[shci-smoke-test](https://github.com/cristiangirlea/shci-smoke-test) repository, whose one workflow
+must then run on it; the runner set is removed afterwards. The
+[runs](https://github.com/cristiangirlea/shci-smoke-test/actions) are the record. That repository's
+workflow is manual-only and its fork pull requests need approval, so it is safe to keep public.
+
+This covers the Linux runners. The Windows runner is checked by the next Windows job of a
+repository that uses it; an installed runner keeps the script version it was installed with, so
+re-run `install-runner.ps1` (elevated) when a release changes it: a re-run repairs in place.
+
 ## Layout
 
 | Path | What lives there |
