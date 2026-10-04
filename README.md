@@ -157,7 +157,7 @@ registry.localhost:5000/...` and `--push` then fail with "server gave HTTP respo
 client". Tell it the registry is plain HTTP (or use `driver: docker`):
 
 ```yaml
-- uses: docker/setup-buildx-action@v4
+- uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
   with:
     # BuildKit runs privileged and comes from Docker Hub: pin it by digest.
     driver-opts: image=moby/buildkit:v0.33.1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
@@ -166,11 +166,12 @@ client". Tell it the registry is plain HTTP (or use `driver: docker`):
         http = true
 ```
 
-curl answers every `*.localhost` name with loopback itself (RFC 6761) and never asks DNS, so a
-job's `curl http://registry.localhost:5000/v2/...` fails with "Couldn't connect" while `docker
-push` works. Give it the address: `--resolve registry.localhost:5000:$(getent ahostsv4
-registry.localhost | awk 'NR==1 {print $1}')`. The smoke test (`shci-smoke-test`) checks all of
-this on every release.
+curl (7.85 and later) answers every `*.localhost` name with loopback itself (RFC 6761) and never
+asks DNS, so a job's `curl http://registry.localhost:5000/v2/...` fails with "Couldn't connect"
+while `docker push` works. Give it the address: `--resolve registry.localhost:5000:$(getent
+ahostsv4 registry.localhost | awk 'NR==1 {print $1}')`. On every release the smoke test
+([shci-smoke-test](https://github.com/cristiangirlea/shci-smoke-test)) checks a push with `docker
+build`, a pull by digest, this buildx setup and the curl workaround.
 
 The registry has no authentication: any job can push any tag, including the runners' own
 `ci-runner` and `dind` images, which is why `runners/values.yaml` pins those by digest (`make
