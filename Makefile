@@ -22,7 +22,7 @@ HOST_DATA := $(shell cygpath -m "$(abspath $(DATA))" 2>/dev/null || echo "$(absp
 WINGET_PKGS := $(LOCALAPPDATA)/Microsoft/WinGet/Packages
 export PATH := $(PATH):$(LOCALAPPDATA)/Programs/lab-tools/bin:$(subst $() $(),:,$(wildcard $(WINGET_PKGS)/*/ $(WINGET_PKGS)/*/*/))
 
-.PHONY: tools wsl-cap up down status tls hello verify lint arc runner-image runner-node runners runners-lint runners-status fork-approval config-check scrub
+.PHONY: tools wsl-cap up down status tls hello verify lint arc runner-image runner-node runners runners-lint images-check runners-status fork-approval config-check scrub
 
 # P2, CI runners. Versions pinned here and nowhere else: the controller and scale-set charts move
 # together, and the runner image is GitHub's runner plus build tools (runners/image/Dockerfile).
@@ -139,6 +139,7 @@ runner-image: runners-lint
 	docker pull docker:$(DIND_VERSION)-dind@$(DIND_DIGEST)
 	docker tag docker:$(DIND_VERSION)-dind@$(DIND_DIGEST) localhost:5000/dind:$(DIND_VERSION)
 	docker push localhost:5000/dind:$(DIND_VERSION)
+	@$(MAKE) --no-print-directory images-check || { echo "put the digest above into runners/values.yaml"; exit 1; }
 
 ## runner-node: reserve RUNNER_NODE for runners. Runner pods are privileged (dind), so the node
 ## they share must hold nothing else; pods already there are evicted to the other nodes.
@@ -176,8 +177,23 @@ config-check:
 
 ## runners-lint: the image tag in runners/values.yaml must be the one runner-image builds.
 runners-lint:
-	@test "$$(grep -c "$(RUNNER_IMAGE)$$" runners/values.yaml)" -eq 2 || { echo "runners/values.yaml must use $(RUNNER_IMAGE) for both the runner and its init container"; exit 1; }
-	@grep -q "dind:$(DIND_VERSION)" runners/values.yaml || { echo "runners/values.yaml does not use dind:$(DIND_VERSION)"; exit 1; }
+	@test "$$(grep -cE "$(RUNNER_IMAGE)@sha256:[0-9a-f]{64}$$" runners/values.yaml)" -eq 2 || { echo "runners/values.yaml must use $(RUNNER_IMAGE)@sha256:<digest> for both the runner and its init container"; exit 1; }
+	@grep -qE "dind:$(DIND_VERSION)@sha256:[0-9a-f]{64}$$" runners/values.yaml || { echo "runners/values.yaml does not use dind:$(DIND_VERSION)@sha256:<digest>"; exit 1; }
+
+## images-check: the digests runners/values.yaml pins must be what the registry holds under
+## those tags (host side: localhost:5000). A mismatch means a rebuild not yet copied into
+## values.yaml, or a tag someone pushed over.
+MANIFEST_TYPES := application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json
+images-check:
+	@refs=$$(grep -oE 'registry.localhost:5000/[^ ]+@sha256:[0-9a-f]{64}' runners/values.yaml | sort -u); \
+	test -n "$$refs" || { echo "runners/values.yaml pins no image by digest"; exit 1; }; \
+	for ref in $$refs; do \
+	  img=$${ref#registry.localhost:5000/}; name=$${img%%:*}; tag=$${img#*:}; tag=$${tag%%@*}; want=$${img#*@}; \
+	  got=$$(curl -fsSI -H "Accept: $(MANIFEST_TYPES)" http://localhost:5000/v2/$$name/manifests/$$tag | tr -d '\r' | sed -n 's/^[Dd]ocker-[Cc]ontent-[Dd]igest: //p'); \
+	  test -n "$$got" || { echo "$$name:$$tag: not in the registry (is the cluster up?)"; exit 1; }; \
+	  test "$$got" = "$$want" || { echo "$$name:$$tag is $$got in the registry, runners/values.yaml pins $$want"; exit 1; }; \
+	  echo "$$name:$$tag $$want"; \
+	done
 
 ## runners-status: the scale sets, their listeners and any runner pods.
 runners-status:
