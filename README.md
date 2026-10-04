@@ -151,8 +151,23 @@ same name the nodes pull it by:
     docker push registry.localhost:5000/my-app:${{ github.sha }}
 ```
 
-The registry has no authentication: any job can overwrite a tag. Deploy by digest
-(`registry.localhost:5000/my-app@sha256:...`) when that matters.
+`docker/setup-buildx-action` creates a `docker-container` builder by default, which runs its
+own BuildKit and does not see the daemon's insecure-registry setting: both `FROM
+registry.localhost:5000/...` and `--push` then fail with "server gave HTTP response to HTTPS
+client". Tell it the registry is plain HTTP (or use `driver: docker`):
+
+```yaml
+- uses: docker/setup-buildx-action@v3
+  with:
+    buildkitd-config-inline: |
+      [registry."registry.localhost:5000"]
+        http = true
+```
+
+The registry has no authentication: any job can push any tag, including the runners' own
+`ci-runner` and `dind` images, which is why `runners/values.yaml` pins those by digest (`make
+images-check` compares them with the registry). Deploy your own images by digest too
+(`registry.localhost:5000/my-app@sha256:...`).
 
 ## Security model
 
@@ -173,6 +188,10 @@ Runners execute whatever a workflow says, so who can reach them matters more tha
 - **Everything the cluster publishes** (80, 443, the API on 6443, the registry on 5000) is bound
   to 127.0.0.1: the registry has no authentication. Every `kubectl` call names the cluster's
   context, so another cluster in your kubeconfig never receives these manifests.
+- **Inside the cluster the registry is writable by every pod**, CI jobs included, and it holds
+  the runners' own images. Anything privileged pulls from it by digest, never by tag alone
+  (`make images-check`); its volume survives `make down`, so a replaced tag would outlive the
+  cluster.
 
 ## Windows runner
 

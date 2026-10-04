@@ -25,6 +25,11 @@ maxRunners: 1
 # no way to pin the Docker daemon's image or cap its memory. It is the chart 0.14.2 dind spec plus
 # those two changes, a node of its own, and the runner image from runners/image.
 #
+# Both images are pinned by digest as well as tag. Any job may push to the cluster's registry
+# (see --insecure-registry below), so a tag alone could be replaced under every scale set's
+# privileged pod. `make images-check` compares these digests with the registry; after `make
+# runner-image` pushes a new build, put the digest it reports here.
+#
 # dind means a privileged container per runner pod. That is acceptable only on the node `make
 # runner-node` taints for them, so a job that escapes to its node finds nothing else there: no
 # controller, no listener holding the GitHub App key, no application; and only for code we wrote,
@@ -40,14 +45,14 @@ template:
         effect: NoExecute
     initContainers:
       - name: init-dind-externals
-        image: registry.localhost:5000/ci-runner:2.337.0-2
+        image: registry.localhost:5000/ci-runner:2.337.0-2@sha256:40bab2f388b59e373ee22e9fd5953d15a56df192ee8a5f1b12529df77e232d14
         command: ["cp"]
         args: ["-r", "/home/runner/externals/.", "/home/runner/tmpDir/"]
         volumeMounts:
           - name: dind-externals
             mountPath: /home/runner/tmpDir
       - name: dind
-        image: registry.localhost:5000/dind:29.2.1
+        image: registry.localhost:5000/dind:29.2.1@sha256:81fcfefed70c7154045d23dec3523719e7564ad2605c1a8a29fdd13ae9e1c710
         # The pod network is flannel VXLAN, MTU 1450. Docker's bridges default to 1500, so a
         # container behind them (a `docker build` RUN step, a job's service) sent packets the pod
         # network dropped: TLS handshakes stalled while the daemon's own image pulls worked.
@@ -89,7 +94,7 @@ template:
             mountPath: /home/runner/externals
     containers:
       - name: runner
-        image: registry.localhost:5000/ci-runner:2.337.0-2
+        image: registry.localhost:5000/ci-runner:2.337.0-2@sha256:40bab2f388b59e373ee22e9fd5953d15a56df192ee8a5f1b12529df77e232d14
         command: ["/home/runner/run.sh"]
         env:
           - name: DOCKER_HOST
