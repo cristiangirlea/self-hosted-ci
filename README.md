@@ -140,6 +140,20 @@ upgrades a release as soon as a value changes, not at its next interval. `make r
 and GitHub, not on Kubernetes objects Flux could own; on a fresh cluster run `make runner-node`
 before the scale sets, or their pods have nowhere to go.
 
+### Pushing images from CI
+
+A job on these runners can build an image and push it to the cluster's own registry, under the
+same name the nodes pull it by:
+
+```yaml
+- run: |
+    docker build -t registry.localhost:5000/my-app:${{ github.sha }} .
+    docker push registry.localhost:5000/my-app:${{ github.sha }}
+```
+
+The registry has no authentication: any job can overwrite a tag. Deploy by digest
+(`registry.localhost:5000/my-app@sha256:...`) when that matters.
+
 ## Security model
 
 Runners execute whatever a workflow says, so who can reach them matters more than anything else.

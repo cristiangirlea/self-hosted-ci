@@ -57,6 +57,10 @@ template:
           - --group=$(DOCKER_GROUP_GID)
           - --mtu=1450
           - --default-network-opt=bridge=com.docker.network.driver.mtu=1450
+          # The cluster's registry speaks plain HTTP. Docker trusts that only for loopback addresses,
+          # so without this a job's `docker push registry.localhost:5000/<image>` fails. Pods resolve
+          # the name (CoreDNS forwards to the node's resolver), and the nodes pull the same name.
+          - --insecure-registry=registry.localhost:5000
         env:
           - name: DOCKER_GROUP_GID
             value: "123"
