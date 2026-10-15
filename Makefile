@@ -22,7 +22,7 @@ HOST_DATA := $(shell cygpath -m "$(abspath $(DATA))" 2>/dev/null || echo "$(absp
 WINGET_PKGS := $(LOCALAPPDATA)/Microsoft/WinGet/Packages
 export PATH := $(PATH):$(LOCALAPPDATA)/Programs/lab-tools/bin:$(subst $() $(),:,$(wildcard $(WINGET_PKGS)/*/ $(WINGET_PKGS)/*/*/))
 
-.PHONY: tools wsl-cap up down status tls hello verify lint arc runner-image runner-node runners runners-lint images-check runners-status fork-approval config-check scrub
+.PHONY: tools wsl-cap up down status tls hello verify lint arc action-cache runner-image runner-node runners runners-lint images-check runners-status fork-approval config-check scrub
 
 # P2, CI runners. Versions pinned here and nowhere else: the controller and scale-set charts move
 # together, and the runner image is GitHub's runner plus build tools (runners/image/Dockerfile).
@@ -31,7 +31,7 @@ ARC_CHART      := oci://ghcr.io/actions/actions-runner-controller-charts
 RUNNER_VERSION := 2.337.0
 # Bumped whenever runners/image/Dockerfile changes: nodes keep an image they already pulled under
 # the same tag, so a rebuild needs a tag they have not seen.
-RUNNER_IMAGE   := ci-runner:$(RUNNER_VERSION)-2
+RUNNER_IMAGE   := ci-runner:$(RUNNER_VERSION)-3
 # Digests pin what the tags pointed at when they were checked (2026-09-30), so a re-pushed tag
 # cannot change the build. Update the version and the digest together.
 RUNNER_DIGEST  := sha256:e5496277be5d09bc968b3d64911b74e219ac4a3f2edce956a3ecf9271bea1ef4
@@ -133,13 +133,19 @@ arc:
 
 ## runner-image: build the runner image and mirror the Docker daemon image into the cluster
 ## registry (host side: localhost:5000), both from pinned digests.
-runner-image: runners-lint
+runner-image: runners-lint action-cache
 	docker build --build-arg RUNNER_VERSION=$(RUNNER_VERSION) --build-arg RUNNER_DIGEST=$(RUNNER_DIGEST) -t localhost:5000/$(RUNNER_IMAGE) runners/image
 	docker push localhost:5000/$(RUNNER_IMAGE)
 	docker pull docker:$(DIND_VERSION)-dind@$(DIND_DIGEST)
 	docker tag docker:$(DIND_VERSION)-dind@$(DIND_DIGEST) localhost:5000/dind:$(DIND_VERSION)
 	docker push localhost:5000/dind:$(DIND_VERSION)
 	@$(MAKE) --no-print-directory images-check || { echo "put the digest above into runners/values.yaml"; exit 1; }
+
+## action-cache: fetch the actions the workflows of REPOS use into the runner image's build context
+## (scripts/action-cache.sh, with gh): jobs then read them from the image instead of downloading
+## them from codeload.github.com, which answers runners sharing one address with 429s.
+action-cache: config-check
+	@scripts/action-cache.sh $(GITHUB_OWNER) runners/image/action-cache $(REPOS)
 
 ## runner-node: reserve RUNNER_NODE for runners. Runner pods are privileged (dind), so the node
 ## they share must hold nothing else; pods already there are evicted to the other nodes.

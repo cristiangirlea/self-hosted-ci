@@ -140,6 +140,21 @@ upgrades a release as soon as a value changes, not at its next interval. `make r
 and GitHub, not on Kubernetes objects Flux could own; on a fresh cluster run `make runner-node`
 before the scale sets, or their pods have nowhere to go.
 
+### Actions come from the image
+
+Every job starts by downloading the actions its workflow uses (`actions/checkout` and the rest)
+from codeload.github.com, without credentials. Runners behind one home address that start together
+share that anonymous limit, and a job fails with `429 (Too Many Requests)` before its first step.
+`make runner-image` therefore runs `make action-cache` first: `scripts/action-cache.sh` reads the
+workflows of every repository in REPOS (default branch, with `gh`, so the calls are authenticated
+and made once per build), resolves each action to its commit and puts the archives in
+`runners/image/action-cache/` (ignored by git), which the image copies to the folder
+`ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE` names. The runner looks there first; an action that is not
+there, for example after a workflow moved to a newer version, is downloaded as before. Rebuild the
+image (a new tag, as always) when workflows change their actions. The script reads `uses:` lines,
+so a `{ uses: ... }` flow mapping is missed, and an action that a composite action uses in turn is
+not fetched: both are downloaded at run time, as before.
+
 ### Pushing images from CI
 
 A job on these runners can build an image and push it to the cluster's own registry, under the
