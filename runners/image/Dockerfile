@@ -19,3 +19,10 @@ RUN install -m 0755 -d /etc/apt/keyrings \
  && apt-get install -y --no-install-recommends build-essential unzip xz-utils openssl docker-compose-plugin \
  && rm -rf /var/lib/apt/lists/*
 USER runner
+
+# The actions the repositories' workflows use, fetched by `make action-cache` (scripts/action-cache.sh)
+# into the build context. The runner looks for <owner>_<repo>/<sha>.tar.gz here before it downloads
+# an action, so jobs stop asking codeload.github.com, whose anonymous limit runners behind one
+# address exhaust together (429). An action not here is downloaded as before.
+COPY action-cache/ /home/runner/action-archive-cache/
+ENV ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE=/home/runner/action-archive-cache

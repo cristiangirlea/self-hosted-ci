@@ -45,7 +45,7 @@ template:
         effect: NoExecute
     initContainers:
       - name: init-dind-externals
-        image: registry.localhost:5000/ci-runner:2.337.0-2@sha256:40bab2f388b59e373ee22e9fd5953d15a56df192ee8a5f1b12529df77e232d14
+        image: registry.localhost:5000/ci-runner:2.337.0-3@sha256:3ced7cdb6eefd3efdbbabd73169910b3d9bf552473e13d471bbbb8b8215cc1e1
         command: ["cp"]
         args: ["-r", "/home/runner/externals/.", "/home/runner/tmpDir/"]
         volumeMounts:
@@ -94,7 +94,7 @@ template:
             mountPath: /home/runner/externals
     containers:
       - name: runner
-        image: registry.localhost:5000/ci-runner:2.337.0-2@sha256:40bab2f388b59e373ee22e9fd5953d15a56df192ee8a5f1b12529df77e232d14
+        image: registry.localhost:5000/ci-runner:2.337.0-3@sha256:3ced7cdb6eefd3efdbbabd73169910b3d9bf552473e13d471bbbb8b8215cc1e1
         command: ["/home/runner/run.sh"]
         env:
           - name: DOCKER_HOST

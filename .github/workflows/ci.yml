@@ -35,7 +35,7 @@ jobs:
           }
           if ($failed) { exit 1 }
       - name: shell scripts parse
-        run: bash -n scripts/scrub-check.sh
+        run: for f in scripts/*.sh; do bash -n "$f"; done
       - name: make lint and config checks
         run: |
           make lint runners-lint

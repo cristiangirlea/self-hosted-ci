@@ -2,6 +2,9 @@
 # Your owner, repositories and domain (copy config.mk.example).
 config.mk
 .data/
+# Fetched by `make action-cache` for the runner image; only the placeholder is tracked.
+runners/image/action-cache/*
+!runners/image/action-cache/.gitkeep
 .env
 *.pem
 *-key.pem
