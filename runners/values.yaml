@@ -66,6 +66,10 @@ template:
           # so without this a job's `docker push registry.localhost:5000/<image>` fails. Pods resolve
           # the name (CoreDNS forwards to the node's resolver), and the nodes pull the same name.
           - --insecure-registry=registry.localhost:5000
+          # Docker Hub pulls go through the cluster's cache (infrastructure/hub-mirror), so a job
+          # does not download an image the last one already had; dockerd falls back to Docker Hub
+          # when the cache does not answer.
+          - --registry-mirror=http://hub-mirror.hub-mirror.svc.cluster.local:5000
         env:
           - name: DOCKER_GROUP_GID
             value: "123"

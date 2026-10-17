@@ -22,7 +22,7 @@ HOST_DATA := $(shell cygpath -m "$(abspath $(DATA))" 2>/dev/null || echo "$(absp
 WINGET_PKGS := $(LOCALAPPDATA)/Microsoft/WinGet/Packages
 export PATH := $(PATH):$(LOCALAPPDATA)/Programs/lab-tools/bin:$(subst $() $(),:,$(wildcard $(WINGET_PKGS)/*/ $(WINGET_PKGS)/*/*/))
 
-.PHONY: tools wslconfig wsl-cap wsl-cache-task wsl-cache-task-remove up down status tls hello verify lint arc action-cache runner-image runner-node runners runners-lint images-check runners-status fork-approval config-check scrub
+.PHONY: tools wslconfig wsl-cap wsl-cache-task wsl-cache-task-remove up down status tls hello verify lint arc hub-mirror action-cache runner-image runner-node runners runners-lint images-check runners-status fork-approval config-check scrub
 
 # P2, CI runners. Versions pinned here and nowhere else: the controller and scale-set charts move
 # together, and the runner image is GitHub's runner plus build tools (runners/image/Dockerfile).
@@ -166,6 +166,12 @@ arc:
 	$(HELM) upgrade --install arc $(ARC_CHART)/gha-runner-scale-set-controller --version $(ARC_VERSION) \
 	  --namespace arc-systems --create-namespace -f infrastructure/arc/controller-values.yaml --wait --timeout 5m
 
+## hub-mirror: the Docker Hub pull-through cache the runners' dind uses (infrastructure/hub-mirror).
+## runner-node first: the Deployment keeps off the node that target labels.
+hub-mirror: runner-node
+	$(KUBECTL) apply -k infrastructure/hub-mirror
+	$(KUBECTL) -n hub-mirror rollout status deploy/hub-mirror --timeout=180s
+
 ## runner-image: build the runner image and mirror the Docker daemon image into the cluster
 ## registry (host side: localhost:5000), both from pinned digests.
 runner-image: runners-lint action-cache
@@ -220,6 +226,13 @@ config-check:
 runners-lint:
 	@test "$$(grep -cE "$(RUNNER_IMAGE)@sha256:[0-9a-f]{64}$$" runners/values.yaml)" -eq 2 || { echo "runners/values.yaml must use $(RUNNER_IMAGE)@sha256:<digest> for both the runner and its init container"; exit 1; }
 	@grep -qE "dind:$(DIND_VERSION)@sha256:[0-9a-f]{64}$$" runners/values.yaml || { echo "runners/values.yaml does not use dind:$(DIND_VERSION)@sha256:<digest>"; exit 1; }
+	@# dind's mirror must name the Service and namespace infrastructure/hub-mirror creates.
+	@grep -qE -- "--registry-mirror=http://hub-mirror\.hub-mirror\.svc\.cluster\.local:5000$$" runners/values.yaml || { echo "runners/values.yaml must point dind at http://hub-mirror.hub-mirror.svc.cluster.local:5000"; exit 1; }
+	@grep -qE "^  name: hub-mirror$$" infrastructure/hub-mirror/service.yaml && grep -qE "^namespace: hub-mirror$$" infrastructure/hub-mirror/kustomization.yaml || { echo "infrastructure/hub-mirror must create Service hub-mirror in namespace hub-mirror"; exit 1; }
+	@grep -qE "image: registry:[0-9.]+@sha256:[0-9a-f]{64}$$" infrastructure/hub-mirror/deployment.yaml || { echo "infrastructure/hub-mirror/deployment.yaml must pin registry by version and digest"; exit 1; }
+	@# The cache stays off the runner node and inside the cluster.
+	@grep -qE "operator: NotIn$$" infrastructure/hub-mirror/deployment.yaml && ! grep -qE "tolerations:" infrastructure/hub-mirror/deployment.yaml || { echo "infrastructure/hub-mirror/deployment.yaml must keep its ci NotIn runners affinity and carry no tolerations"; exit 1; }
+	@! grep -qE "^ *(type|nodePort|externalIPs):" infrastructure/hub-mirror/service.yaml || { echo "infrastructure/hub-mirror/service.yaml must stay a ClusterIP Service"; exit 1; }
 
 ## images-check: the digests runners/values.yaml pins must be what the registry holds under
 ## those tags (host side: localhost:5000). A mismatch means a rebuild not yet copied into

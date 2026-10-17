@@ -1,0 +1,11 @@
+# A pull-through cache for Docker Hub. Each runner pod's Docker daemon starts empty and is thrown
+# away with the pod, so without it every job downloads the same images again; runners/values.yaml
+# points dind at it with --registry-mirror. `make hub-mirror` applies this folder, or Flux does.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: hub-mirror
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
