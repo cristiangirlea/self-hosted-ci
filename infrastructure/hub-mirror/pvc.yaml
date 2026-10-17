@@ -1,0 +1,12 @@
+# k3s's local-path volumes live under /var/lib/rancher/k3s/storage, the k3d-<cluster>-storage
+# Docker volume (cluster/k3d.yaml): the cache outlives the pod. local-path does not enforce the size.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hub-mirror
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 50Gi

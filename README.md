@@ -68,6 +68,7 @@ Then:
 
 ```bash
 make arc            # the runner controller
+make hub-mirror     # the Docker Hub cache the runners' Docker daemons pull through
 make runner-image   # GitHub's runner image plus build tools, pushed to the cluster's registry
 make runners        # one scale set per repository in REPOS, named lab-<repo>
 make runners-status
@@ -138,7 +139,8 @@ The ConfigMaps carry `reconcile.fluxcd.io/watch: Enabled`, so helm-controller (F
 upgrades a release as soon as a value changes, not at its next interval. `make runner-node`,
 `make runner-image` and `make fork-approval` stay make targets: they act on a node, the registry
 and GitHub, not on Kubernetes objects Flux could own; on a fresh cluster run `make runner-node`
-before the scale sets, or their pods have nowhere to go.
+before the scale sets and the Docker Hub cache, or the runner pods have nowhere to go and the
+cache's volume may be tied to the runner node.
 
 ### Actions come from the image
 
@@ -154,6 +156,24 @@ there, for example after a workflow moved to a newer version, is downloaded as b
 image (a new tag, as always) when workflows change their actions. The script reads `uses:` lines,
 so a `{ uses: ... }` flow mapping is missed, and an action that a composite action uses in turn is
 not fetched: both are downloaded at run time, as before.
+
+### Docker Hub images are cached
+
+Each runner pod's Docker daemon starts empty and is thrown away with the pod, so a job that pulls
+`golang` or starts a `postgres` service would download it again every run. `make hub-mirror` (or a
+Flux Kustomization pointing at [`infrastructure/hub-mirror`](infrastructure/hub-mirror)) runs a
+pull-through cache for Docker Hub inside the cluster, on a persistent volume and never on the
+runner node, and `runners/values.yaml` gives dind `--registry-mirror` for it. The first pull of an
+image goes to Docker Hub through the cache; later jobs get it from the volume, and the cache asks
+Docker Hub only whether a tag moved. Content is deleted 30 days after it was cached. When the cache
+does not answer (not installed, or down), dockerd pulls from Docker Hub directly; a cache whose
+disk is full fails the pull instead, and its volume has no size limit, so watch the disk.
+
+It covers Docker Hub only: `ghcr.io`, `mcr.microsoft.com` and other registries are pulled as
+before. A `docker-container` buildx builder (the default of `docker/setup-buildx-action`) does not
+use the daemon's mirror either; give it one in its BuildKit config (`[registry."docker.io"]`,
+`mirrors = ["hub-mirror.hub-mirror.svc.cluster.local:5000"]`, `http = true` for that host) or use
+`driver: docker`.
 
 ### Pushing images from CI
 
@@ -216,6 +236,11 @@ Runners execute whatever a workflow says, so who can reach them matters more tha
   the runners' own images. Anything privileged pulls from it by digest, never by tag alone
   (`make images-check`); its volume survives `make down`, so a replaced tag would outlive the
   cluster.
+- **The Docker Hub cache** answers only inside the cluster (a ClusterIP Service) and only pulls:
+  it refuses pushes, and its pod never runs on the runner node. Its files, like every persistent
+  volume here, live in the `k3d-<cluster>-storage` Docker volume, which k3d mounts on every node,
+  the runner node included: a job that escapes to its node could rewrite what the cache serves to
+  later jobs. Pull images by digest where that matters, as for the cluster's registry.
 
 ## Windows runner
 
@@ -262,7 +287,7 @@ re-run `install-runner.ps1` (elevated) when a release changes it: a re-run repai
 | Path | What lives there |
 |---|---|
 | `cluster/k3d.yaml` | the cluster: one server, two agents, the image registry, ports, volumes |
-| `infrastructure/` | Traefik's default TLS certificate, the runner controller's values |
+| `infrastructure/` | Traefik's default TLS certificate, the runner controller's values, the Docker Hub cache |
 | `runners/` | the scale set values (one file for every repository), the runner image, the Windows runner |
 | `apps/hello/` | the smoke-test application |
 | `tofu/` | modules for the repository variables and the DNS record, and an example root |

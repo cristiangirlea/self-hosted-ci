@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hub-mirror
+spec:
+  replicas: 1
+  # One pod owns the ReadWriteOnce volume; the old one must stop before the new one mounts it.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: hub-mirror
+  template:
+    metadata:
+      labels:
+        app: hub-mirror
+    spec:
+      # Off the runner node even before `make runner-node` taints it: local-path ties the volume
+      # to the first pod's node, and a pod there would stay Pending once the taint arrives.
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: ci
+                    operator: NotIn
+                    values: [runners]
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: registry
+          # Pinned by digest like every image here (registry 3.1.2, 2026-09-24).
+          image: registry:3.1.2@sha256:ddf754342cfc8acc51a56d5d0ab6af06826461864460636d8bd5c546dab2a7b8
+          env:
+            # Proxy mode: serves pulls only (pushes are refused) and fetches what it lacks.
+            - name: REGISTRY_PROXY_REMOTEURL
+              value: https://registry-1.docker.io
+            # Cached content is deleted 30 days after it was fetched (the default is 7).
+            - name: REGISTRY_PROXY_TTL
+              value: 720h
+          ports:
+            - name: http
+              containerPort: 5000
+          readinessProbe:
+            httpGet:
+              path: /v2/
+              port: http
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/registry
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: hub-mirror
