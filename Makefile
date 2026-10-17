@@ -22,7 +22,7 @@ HOST_DATA := $(shell cygpath -m "$(abspath $(DATA))" 2>/dev/null || echo "$(absp
 WINGET_PKGS := $(LOCALAPPDATA)/Microsoft/WinGet/Packages
 export PATH := $(PATH):$(LOCALAPPDATA)/Programs/lab-tools/bin:$(subst $() $(),:,$(wildcard $(WINGET_PKGS)/*/ $(WINGET_PKGS)/*/*/))
 
-.PHONY: tools wsl-cap up down status tls hello verify lint arc hub-mirror action-cache runner-image runner-node runners runners-lint images-check runners-status fork-approval config-check scrub
+.PHONY: tools wslconfig wsl-cap wsl-cache-task wsl-cache-task-remove up down status tls hello verify lint arc hub-mirror action-cache runner-image runner-node runners runners-lint images-check runners-status fork-approval config-check scrub
 
 # P2, CI runners. Versions pinned here and nowhere else: the controller and scale-set charts move
 # together, and the runner image is GitHub's runner plus build tools (runners/image/Dockerfile).
@@ -70,14 +70,49 @@ endif
 tools:
 	powershell -NoProfile -ExecutionPolicy Bypass -File tools/install.ps1
 
-## wsl-cap: apply the WSL memory/CPU ceilings from tools/wslconfig. Restarts WSL, which stops
-## EVERY Docker container on the machine (they come back only if they have a restart policy).
+# From config.mk, all optional: this machine's WSL ceilings (memory as 32GB, a processor count)
+# and a swap file path on another drive (I:\WSL\swap.vhdx). WSL's default puts swap in %TEMP%.
+WSL_MEMORY     ?=
+WSL_PROCESSORS ?=
+WSL_SWAP_FILE  ?=
+# make keeps the spaces before a trailing comment in a value; the checks below would reject them.
+override WSL_MEMORY     := $(strip $(WSL_MEMORY))
+override WSL_PROCESSORS := $(strip $(WSL_PROCESSORS))
+override WSL_SWAP_FILE  := $(strip $(WSL_SWAP_FILE))
+# .wslconfig wants every backslash in a path doubled. The recipe carries the path with / instead
+# (Windows make collapses \\ on its way to sh) and tr turns each / back into a backslash.
+# $(subst) matches a literal backslash only through a variable.
+BS             := \$(strip)
+WSL_SWAP_FWD   := $(subst $(BS),/,$(WSL_SWAP_FILE))
+
+## wslconfig: print the .wslconfig that wsl-cap writes: tools/wslconfig with the WSL_* values.
+wslconfig:
+	@test -z "$(WSL_MEMORY)" || echo "$(WSL_MEMORY)" | grep -qE '^[0-9]+[MG]B$$' || { echo "WSL_MEMORY must look like 32GB or 8192MB, not $(WSL_MEMORY)" >&2; exit 1; }
+	@test -z "$(WSL_PROCESSORS)" || echo "$(WSL_PROCESSORS)" | grep -qE '^[1-9][0-9]*$$' || { echo "WSL_PROCESSORS must be a whole number, not $(WSL_PROCESSORS)" >&2; exit 1; }
+	@test -z "$(WSL_SWAP_FILE)" || printf '%s\n' '$(WSL_SWAP_FWD)' | grep -qiE '^[a-z]:/[^/].*\.vhdx$$' || { echo 'WSL_SWAP_FILE must be a Windows path ending in .vhdx, not $(WSL_SWAP_FWD)' >&2; exit 1; }
+	@sed -e '' $(if $(WSL_MEMORY),-e 's/^memory=.*/memory=$(WSL_MEMORY)/') $(if $(WSL_PROCESSORS),-e 's/^processors=.*/processors=$(WSL_PROCESSORS)/') tools/wslconfig
+	@test -z "$(WSL_SWAP_FILE)" || printf 'swapFile=%s\n' '$(WSL_SWAP_FWD)' | sed 's|/|//|g' | tr '/' '\134'
+
+## wsl-cap: write the WSL memory/CPU ceilings (make wslconfig) to .wslconfig. Restarts WSL, which
+## stops EVERY Docker container on the machine (they come back only if they have a restart policy).
 wsl-cap:
-	@test ! -f "$(USERPROFILE)/.wslconfig" || { cp "$(USERPROFILE)/.wslconfig" "$(USERPROFILE)/.wslconfig.bak"; echo "existing .wslconfig saved as .wslconfig.bak"; }
+	@test -z "$(WSL_SWAP_FILE)" || test -d "$$(dirname "$$(cygpath -u '$(WSL_SWAP_FWD)')")" || { echo 'the folder for WSL_SWAP_FILE $(WSL_SWAP_FWD) does not exist'; exit 1; }
+	@$(MAKE) --no-print-directory -s wslconfig > "$(USERPROFILE)/.wslconfig.new" || { rm -f "$(USERPROFILE)/.wslconfig.new"; exit 1; }
+	@# The first backup is the one worth keeping: later runs would only save a copy of our own file.
+	@test ! -f "$(USERPROFILE)/.wslconfig" -o -f "$(USERPROFILE)/.wslconfig.bak" || { cp "$(USERPROFILE)/.wslconfig" "$(USERPROFILE)/.wslconfig.bak"; echo "existing .wslconfig saved as .wslconfig.bak"; }
 	@echo "containers running now: $$(docker ps -q | wc -l) (all of them stop during the restart)"
-	cp tools/wslconfig "$(USERPROFILE)/.wslconfig"
+	mv "$(USERPROFILE)/.wslconfig.new" "$(USERPROFILE)/.wslconfig"
 	wsl --shutdown
 	@echo "WSL stopped; Docker Desktop restarts its engine on the next docker command (wait ~30 s)."
+
+## wsl-cache-task: a scheduled task for the current user that drops the WSL VM's page cache every
+## 15 minutes while Docker Desktop's distribution runs (tools/wsl-drop-cache.ps1, from this folder).
+wsl-cache-task:
+	powershell -NoProfile -ExecutionPolicy Bypass -File tools/wsl-cache-task.ps1
+
+## wsl-cache-task-remove: unregister that task.
+wsl-cache-task-remove:
+	powershell -NoProfile -ExecutionPolicy Bypass -File tools/wsl-cache-task.ps1 -Remove
 
 ## up: create the cluster from cluster/k3d.yaml if it does not exist, start it if stopped, wait for Traefik.
 up:

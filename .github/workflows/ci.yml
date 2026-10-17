@@ -39,9 +39,30 @@ jobs:
       - name: make lint and config checks
         run: |
           make lint runners-lint
-          ! make -s config-check 2>/dev/null
+          # bash -e ignores a failure after ! and inside a && list, so each check stands alone.
+          if make -s config-check 2>/dev/null; then echo "config-check passed without a config"; exit 1; fi
           printf 'GITHUB_OWNER := example\nREPOS := a\n' > /tmp/config.mk
           make -s config-check CONFIG=/tmp/config.mk
+      - name: wslconfig renders defaults and per-machine values
+        run: |
+          make -s wslconfig > /tmp/default.ini
+          grep -qx 'memory=24GB' /tmp/default.ini
+          grep -qx 'processors=16' /tmp/default.ini
+          # WSL reads these two only under [experimental].
+          sed -n '/^\[experimental\]/,/^\[/p' /tmp/default.ini | grep -qx 'autoMemoryReclaim=dropCache'
+          sed -n '/^\[experimental\]/,/^\[/p' /tmp/default.ini | grep -qx 'sparseVhd=true'
+          test "$(grep '^\[' /tmp/default.ini | tail -1)" = '[wsl2]'
+          if grep -q '^swapFile=' /tmp/default.ini; then echo "swapFile without WSL_SWAP_FILE"; exit 1; fi
+          # Trailing spaces and a comment after a value, as people write config files.
+          printf 'WSL_MEMORY := 32GB   # this PC\nWSL_PROCESSORS := 24\nWSL_SWAP_FILE := D:\\WSL\\swap.vhdx \n' > /tmp/wsl.mk
+          make -s wslconfig CONFIG=/tmp/wsl.mk > /tmp/custom.ini
+          grep -qx 'memory=32GB' /tmp/custom.ini
+          grep -qx 'processors=24' /tmp/custom.ini
+          test "$(tail -1 /tmp/custom.ini)" = 'swapFile=D:\\WSL\\swap.vhdx'
+          test "$(make -s wslconfig WSL_SWAP_FILE=D:/WSL/swap.vhdx | tail -1)" = 'swapFile=D:\\WSL\\swap.vhdx'
+          for bad in WSL_MEMORY=32 WSL_PROCESSORS=x WSL_SWAP_FILE=swap.vhdx 'WSL_SWAP_FILE=D:\\WSL\\swap.vhdx'; do
+            if make -s wslconfig "$bad" >/dev/null 2>&1; then echo "accepted $bad"; exit 1; fi
+          done
       - name: manifests render
         run: |
           kubectl kustomize apps/hello/local > /dev/null

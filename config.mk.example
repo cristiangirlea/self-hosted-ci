@@ -11,6 +11,13 @@ REPOS := my-private-repo
 # from a fork's pull request wait for your approval in these. Leave it empty if all are private.
 PUBLIC_REPOS :=
 
+# This machine's WSL VM, written by `make wsl-cap` over tools/wslconfig's defaults (24GB, 16).
+# The swap file goes in %TEMP% on the system drive unless WSL_SWAP_FILE names another; its folder
+# must exist.
+# WSL_MEMORY     := 32GB
+# WSL_PROCESSORS := 24
+# WSL_SWAP_FILE  := D:\WSL\swap.vhdx
+
 # A wildcard name for the lab that resolves to 127.0.0.1, for example lab.example.com
 # (tofu/ can create the record in Cloudflare). The default resolves nowhere; `make verify` still works.
 # DOMAIN := lab.example.com

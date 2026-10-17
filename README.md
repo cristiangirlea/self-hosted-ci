@@ -38,6 +38,14 @@ make hello      # a smoke-test application behind the ingress
 make verify     # https://hello.<DOMAIN> through Traefik, the name resolved locally
 ```
 
+`make wslconfig` prints what `make wsl-cap` writes: `tools/wslconfig` with this machine's
+`WSL_MEMORY`, `WSL_PROCESSORS` and `WSL_SWAP_FILE` from `config.mk`. Windows counts the VM's Linux
+page cache as used memory, and WSL gives it back only when the VM is idle, which a cluster running
+CI seldom is. `make wsl-cache-task` registers a task for your user that drops that cache every 15
+minutes, only while Docker Desktop's distribution is running (it never starts WSL); `make
+wsl-cache-task-remove` removes it. The task runs `tools/wsl-drop-cache.ps1` from this checkout, so
+keep the checkout where it is.
+
 `mkcert -install` (once) makes your browser trust the local CA. For real hostnames in the browser,
 point a wildcard such as `*.lab.example.com` at `127.0.0.1`; [`tofu/`](tofu) can create that record
 in Cloudflare (`manage_dns = true`).
@@ -291,7 +299,7 @@ re-run `install-runner.ps1` (elevated) when a release changes it: a re-run repai
 | `runners/` | the scale set values (one file for every repository), the runner image, the Windows runner |
 | `apps/hello/` | the smoke-test application |
 | `tofu/` | modules for the repository variables and the DNS record, and an example root |
-| `tools/` | the pinned tool installer and the WSL limits |
+| `tools/` | the pinned tool installer, the WSL limits and the WSL cache task |
 | `scripts/` | `scrub-check.sh` |
 | `config.mk.example` | the values `make` reads from your `config.mk` |
 
